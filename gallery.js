@@ -4,10 +4,21 @@
 
   var biz_info = {}, image_info = [], image_idx = 0;
 
+  function updateIndex(idx) {
+    var meta;
+    image_idx = idx;
+
+    meta = image_info[idx];
+    if (meta) {
+      $("a[class='zoom-in']").attr('href', meta.full_url);
+    }
+  }
+
   function populateImages() {
     var $thumbs = $("#photo-thumbnails"), $h, i;
 
     $thumbs.empty();
+
     for (i = 0; image_info[i]; i++) {
       $h = $(Mustache.to_html(photo_template, image_info[i]))
         .data({
@@ -37,12 +48,10 @@
     };
   }
 
-  function insertImages(images) {
+  function handleNewImages(images) {
     images = images.photo_slice;
     image_info.unshift.apply(image_info, images.map(filterImage));
     image_info.sort(sortByImageDate);
-
-    populateImages();
   }
 
   function loadImages(biz_id, image_cnt, success) {
@@ -94,7 +103,7 @@
     var target_thumb = image_info[index].thumb_url;
     console.log(target_thumb);
 
-    image_idx = index;
+    updateIndex(index);
     window.postMessage({
       type: "focus_thumb",
       url: target_thumb
@@ -129,8 +138,8 @@
 
       if (/ms.jpg$/.test($target.attr('src'))) {
         console.log(evt.target);
-        console.log(evt.originalTarget);
-        image_idx = $target.closest('div.photo').data('index');
+        updateIndex($target.closest('div.photo').data('index'));
+        console.log(image_idx);
       }
 
       if ($target.closest("#yelp-ext-image-overlay").length) {
@@ -149,7 +158,6 @@
     }, true);
   }
 
-
   function insertImageOverlay() {
     var $h;
 
@@ -157,9 +165,6 @@
     $("#selected-photo-frame > div")
       .append($h)
       .mouseenter(function () {
-        var meta = image_info[image_idx];
-
-        $h.find("a[class='zoom-in']").attr('href', meta.full_url);
         $h.fadeIn(50);
       })
       .mouseleave(function () {
@@ -184,13 +189,36 @@
     selectIndex(0);
   }
 
+  function waitForLoaded() {
+    var dfd = new jQuery.Deferred(),
+      fail_count = 0;
+
+    function watchThrobber() {
+      if ($("#selected-photo-frame").hasClass("mega-throbber") === false &&
+          $("#photo-thumbnails > *:first").length > 0) {
+        dfd.resolve();
+      } else {
+        if (fail_count++ < 500) {
+          window.setTimeout(watchThrobber, 50);
+        }
+      }
+    }
+
+    window.setTimeout(watchThrobber, 50);
+    return dfd;
+  }
+
   injectAssets();
   hookEvents();
 
   biz_info = extractBizDetails(document.body.innerHTML);
 
-  $.when(loadImages(biz_info.biz_id, biz_info.image_count, insertImages))
+  populateImages();
+
+  $.when(loadImages(biz_info.biz_id, biz_info.image_count, handleNewImages),
+         waitForLoaded())
     .then(function () {
+      populateImages();
       insertImageOverlay();
       window.setTimeout(selectZero, 50);
     });
